@@ -17,54 +17,63 @@
     https://github.com/alexemanuelol/rustplusplus
 
 */
+const Discord = require('discord.js');
+const Fs = require('fs');
+const Path = require('path');
+const express = require('express'); // 🔹 import Express
+const DiscordBot = require('./src/structures/DiscordBot');
 
-import express, { Request, Response } from 'express';
-import { config } from 'dotenv';
-import { Client, GatewayIntentBits } from 'discord.js';
+createMissingDirectories();
 
-// Wczytanie zmiennych środowiskowych z .env
-config();
+const client = new DiscordBot({
+    intents: [
+        Discord.GatewayIntentBits.Guilds,
+        Discord.GatewayIntentBits.GuildMessages,
+        Discord.GatewayIntentBits.MessageContent,
+        Discord.GatewayIntentBits.GuildMembers,
+        Discord.GatewayIntentBits.GuildVoiceStates
+    ],
+    retryLimit: 2,
+    restRequestTimeout: 60000,
+    disableEveryone: false
+});
 
-const PORT = process.env.PORT || 3000;
-const TOKEN = process.env.TOKEN;
-
-if (!TOKEN) {
-    throw new Error('Brak tokenu Discorda w .env!');
-}
+client.build();
 
 // ==================== Serwer HTTP ====================
 const app = express();
+const PORT = process.env.PORT || 3000;
 
 // Strona główna
-app.get('/', (req: Request, res: Response) => {
+app.get('/', (req, res) => {
     res.send('Bot działa! ✅');
 });
 
-// Endpoint do pingowania (np. UptimeRobot)
-app.get('/ping', (req: Request, res: Response) => {
+// 🔹 Endpoint ping do UptimeRobot
+app.get('/ping', (req, res) => {
     res.send('pong');
 });
 
-// Uruchomienie serwera
-app.listen(PORT, () => {
-    console.log(`Serwer HTTP nasłuchuje na porcie ${PORT}`);
+app.listen(PORT, () => console.log(`Serwer HTTP nasłuchuje na porcie ${PORT}`));
+
+// ==================== Funkcja tworząca brakujące katalogi ====================
+function createMissingDirectories() {
+    const folders = ['logs', 'instances', 'credentials', 'maps'];
+    folders.forEach(folder => {
+        const dir = Path.join(__dirname, folder);
+        if (!Fs.existsSync(dir)) {
+            Fs.mkdirSync(dir);
+            console.log(`Utworzono folder: ${folder}`);
+        }
+    });
+}
+
+// ==================== Obsługa nieprzewidzianych błędów ====================
+process.on('unhandledRejection', error => {
+    client.log(client.intlGet(null, 'errorCap'), client.intlGet(null, 'unhandledRejection', {
+        error: error
+    }), 'error');
+    console.log(error);
 });
 
-// ==================== Discord Bot ====================
-const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
-});
-
-client.once('ready', () => {
-    console.log(`Zalogowano jako ${client.user?.tag}`);
-});
-
-// Tu możesz dodać eventy bota, np. messageCreate
-client.on('messageCreate', (message) => {
-    if (message.content === '!ping') {
-        message.reply('Pong!');
-    }
-});
-
-// Logowanie bota
-client.login(TOKEN);
+exports.client = client;
