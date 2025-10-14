@@ -18,51 +18,53 @@
 
 */
 
-const Discord = require('discord.js');
-const Fs = require('fs');
-const Path = require('path');
+import express, { Request, Response } from 'express';
+import { config } from 'dotenv';
+import { Client, GatewayIntentBits } from 'discord.js';
 
-const DiscordBot = require('./src/structures/DiscordBot');
+// Wczytanie zmiennych środowiskowych z .env
+config();
 
-createMissingDirectories();
+const PORT = process.env.PORT || 3000;
+const TOKEN = process.env.TOKEN;
 
-const client = new DiscordBot({
-    intents: [
-        Discord.GatewayIntentBits.Guilds,
-        Discord.GatewayIntentBits.GuildMessages,
-        Discord.GatewayIntentBits.MessageContent,
-        Discord.GatewayIntentBits.GuildMembers,
-        Discord.GatewayIntentBits.GuildVoiceStates],
-    retryLimit: 2,
-    restRequestTimeout: 60000,
-    disableEveryone: false
-});
-
-client.build();
-
-function createMissingDirectories() {
-    if (!Fs.existsSync(Path.join(__dirname, 'logs'))) {
-        Fs.mkdirSync(Path.join(__dirname, 'logs'));
-    }
-
-    if (!Fs.existsSync(Path.join(__dirname, 'instances'))) {
-        Fs.mkdirSync(Path.join(__dirname, 'instances'));
-    }
-
-    if (!Fs.existsSync(Path.join(__dirname, 'credentials'))) {
-        Fs.mkdirSync(Path.join(__dirname, 'credentials'));
-    }
-
-    if (!Fs.existsSync(Path.join(__dirname, 'maps'))) {
-        Fs.mkdirSync(Path.join(__dirname, 'maps'));
-    }
+if (!TOKEN) {
+    throw new Error('Brak tokenu Discorda w .env!');
 }
 
-process.on('unhandledRejection', error => {
-    client.log(client.intlGet(null, 'errorCap'), client.intlGet(null, 'unhandledRejection', {
-        error: error
-    }), 'error');
-    console.log(error);
+// ==================== Serwer HTTP ====================
+const app = express();
+
+// Strona główna
+app.get('/', (req: Request, res: Response) => {
+    res.send('Bot działa! ✅');
 });
 
-exports.client = client;
+// Endpoint do pingowania (np. UptimeRobot)
+app.get('/ping', (req: Request, res: Response) => {
+    res.send('pong');
+});
+
+// Uruchomienie serwera
+app.listen(PORT, () => {
+    console.log(`Serwer HTTP nasłuchuje na porcie ${PORT}`);
+});
+
+// ==================== Discord Bot ====================
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
+});
+
+client.once('ready', () => {
+    console.log(`Zalogowano jako ${client.user?.tag}`);
+});
+
+// Tu możesz dodać eventy bota, np. messageCreate
+client.on('messageCreate', (message) => {
+    if (message.content === '!ping') {
+        message.reply('Pong!');
+    }
+});
+
+// Logowanie bota
+client.login(TOKEN);
