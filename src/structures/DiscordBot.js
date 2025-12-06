@@ -4,11 +4,11 @@ const Path = require('path');
 
 const Config = require('../../config');
 const DiscordEmbeds = require('../discordTools/discordEmbeds.js');
-const DiscordTools = require('../discordTools/discordTools');
-const InstanceUtils = require('src/util/instanceUtils.js');
+const DiscordTools = require('../discordTools/discordTools.js');
+const InstanceUtils = require('../util/instanceUtils.js');
 const PermissionHandler = require('../handlers/permissionHandler.js');
-const RustPlus = require('../structures/RustPlus');
-const Battlemetrics = require('../structures/Battlemetrics');
+const RustPlus = require('../structures/RustPlus.js');
+const Battlemetrics = require('../structures/Battlemetrics.js');
 
 class DiscordBot extends Discord.Client {
     constructor(props) {
@@ -71,7 +71,7 @@ class DiscordBot extends Discord.Client {
             this.log('Setup', `Stworzono kanał ${verifyChannelName} w guild ${guild.name}`);
         }
 
-        // Panel AI – nie robimy nic, jak chcesz możesz dodać później
+        // Panel AI – na razie pomijamy
 
         // Reset RustPlus variables
         this.activeRustplusInstances[guild.id] = false;
