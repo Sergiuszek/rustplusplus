@@ -1412,5 +1412,11 @@ module.exports = {
         }
 
         return embed;
+        module.exports = {
+    getEmbed: module.exports.getEmbed,
+    getSmartSwitchEmbed,
+    getServerEmbed: module.exports.getServerEmbed
+};
+
     },
 }
