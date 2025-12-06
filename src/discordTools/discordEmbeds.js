@@ -54,10 +54,10 @@ module.exports = {
         return embed;
     },
 
-    getSmartSwitchEmbed: function (guildId, serverId, entityId) {
-        const instance = Client.client.getInstance(guildId);
-        const entity = instance.serverList[serverId].switches[entityId];
-        const grid = entity.location !== null ? ` (${entity.location})` : '';
+        function getSmartSwitchEmbed(guildId, serverId, entityId) {
+            const instance = Client.client.getInstance(guildId);
+            const entity = instance.serverList[serverId].switches[entityId];
+            const grid = entity.location !== null ? ` (${entity.location})` : '';
 
         return module.exports.getEmbed({
             title: `${entity.name}${grid}`,
@@ -69,10 +69,11 @@ module.exports = {
                 name: Client.client.intlGet(guildId, 'customCommand'),
                 value: `\`${instance.generalSettings.prefix}${entity.command}\``,
                 inline: true
-            }],
-            timestamp: true
-        });
-    },
+        }],
+        timestamp: true
+    });
+}
+
 
     getServerEmbed: async function (guildId, serverId) {
         const instance = Client.client.getInstance(guildId);
