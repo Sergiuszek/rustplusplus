@@ -1,71 +1,33 @@
-const FormatJS = require('@formatjs/intl');
 const Discord = require('discord.js');
 const Fs = require('fs');
 const Path = require('path');
 
-const Battlemetrics = require('../structures/Battlemetrics');
-const Cctv = require('./Cctv');
 const Config = require('../../config');
 const DiscordEmbeds = require('../discordTools/discordEmbeds.js');
 const DiscordTools = require('../discordTools/discordTools');
 const InstanceUtils = require('../util/instanceUtils.js');
-const Items = require('./Items');
-const Logger = require('./Logger.js');
 const PermissionHandler = require('../handlers/permissionHandler.js');
-const RustLabs = require('../structures/RustLabs');
 const RustPlus = require('../structures/RustPlus');
+const Battlemetrics = require('../structures/Battlemetrics');
 
 class DiscordBot extends Discord.Client {
     constructor(props) {
-        super({ intents: [
-            Discord.GatewayIntentBits.Guilds,
-            Discord.GatewayIntentBits.GuildMessages,
-            Discord.GatewayIntentBits.GuildMembers,
-            Discord.GatewayIntentBits.MessageContent
-        ]});
-
-        this.logger = new Logger(Path.join(__dirname, '..', '..', 'logs/discordBot.log'), 'default');
+        super(props);
 
         this.commands = new Discord.Collection();
-        this.fcmListeners = {};
-        this.fcmListenersLite = {};
         this.instances = {};
         this.guildIntl = {};
-        this.botIntl = null;
-        this.enIntl = null;
-        this.enMessages = JSON.parse(Fs.readFileSync(Path.join(__dirname, '..', 'languages', 'en.json'), 'utf8'));
-
         this.rustplusInstances = {};
         this.activeRustplusInstances = {};
-        this.rustplusReconnectTimers = {};
-        this.rustplusLiteReconnectTimers = {};
-        this.rustplusReconnecting = {};
-        this.rustplusMaps = {};
-
-        this.uptimeBot = null;
-
-        this.items = new Items();
-        this.rustlabs = new RustLabs();
-        this.cctv = new Cctv();
-
-        this.pollingIntervalMs = Config.general.pollingIntervalMs;
-
         this.battlemetricsInstances = {};
-
-        this.battlemetricsIntervalId = null;
-        this.battlemetricsIntervalCounter = 0;
-
-        this.voiceLeaveTimeouts = {};
+        this.uptimeBot = null;
 
         this.loadDiscordCommands();
         this.loadDiscordEvents();
-        this.loadEnIntl();
-        this.loadBotIntl();
     }
 
     loadDiscordCommands() {
-        const commandFiles = Fs.readdirSync(Path.join(__dirname, '..', 'commands'))
-            .filter(file => file.endsWith('.js'));
+        const commandFiles = Fs.readdirSync(Path.join(__dirname, '..', 'commands')).filter(f => f.endsWith('.js'));
         for (const file of commandFiles) {
             const command = require(`../commands/${file}`);
             this.commands.set(command.name, command);
@@ -73,14 +35,10 @@ class DiscordBot extends Discord.Client {
     }
 
     loadDiscordEvents() {
-        const eventFiles = Fs.readdirSync(Path.join(__dirname, '..', 'discordEvents'))
-            .filter(file => file.endsWith('.js'));
+        const eventFiles = Fs.readdirSync(Path.join(__dirname, '..', 'discordEvents')).filter(f => f.endsWith('.js'));
         for (const file of eventFiles) {
             const event = require(`../discordEvents/${file}`);
-
-            if (event.name === 'rateLimited') {
-                this.rest.on(event.name, (...args) => event.execute(this, ...args));
-            } else if (event.once) {
+            if (event.once) {
                 this.once(event.name, (...args) => event.execute(this, ...args));
             } else {
                 this.on(event.name, (...args) => event.execute(this, ...args));
@@ -88,108 +46,68 @@ class DiscordBot extends Discord.Client {
         }
     }
 
-    loadEnIntl() {
-        const language = 'en';
-        const path = Path.join(__dirname, '..', 'languages', `${language}.json`);
-        const messages = JSON.parse(Fs.readFileSync(path, 'utf8'));
-        const cache = FormatJS.createIntlCache();
-        this.enIntl = FormatJS.createIntl({ locale: language, defaultLocale: 'en', messages }, cache);
-    }
-
-    loadBotIntl() {
-        const language = Config.general.language;
-        const path = Path.join(__dirname, '..', 'languages', `${language}.json`);
-        const messages = JSON.parse(Fs.readFileSync(path, 'utf8'));
-        const cache = FormatJS.createIntlCache();
-        this.botIntl = FormatJS.createIntl({ locale: language, defaultLocale: 'en', messages }, cache);
-    }
-
-    loadGuildIntl(guildId) {
-        const instance = InstanceUtils.readInstanceFile(guildId);
-        const language = instance.generalSettings.language;
-        const path = Path.join(__dirname, '..', 'languages', `${language}.json`);
-        const messages = JSON.parse(Fs.readFileSync(path, 'utf8'));
-        const cache = FormatJS.createIntlCache();
-        this.guildIntl[guildId] = FormatJS.createIntl({ locale: language, defaultLocale: 'en', messages }, cache);
-    }
-
-    intlGet(guildId, id, variables = {}) {
-        let intl = guildId && guildId !== 'en' ? this.guildIntl[guildId] :
-            (guildId === 'en' ? this.enIntl : this.botIntl);
-        return intl.formatMessage({ id, defaultMessage: this.enMessages[id] }, variables);
-    }
-
-    build() {
-        this.login(Config.discord.token).catch(error => {
-            switch (error.code) {
-                case 502:
-                    this.log(this.intlGet(null, 'errorCap'), this.intlGet(null, 'badGateway', { error: JSON.stringify(error) }), 'error');
-                    break;
-                case 503:
-                    this.log(this.intlGet(null, 'errorCap'), this.intlGet(null, 'serviceUnavailable', { error: JSON.stringify(error) }), 'error');
-                    break;
-                default:
-                    this.log(this.intlGet(null, 'errorCap'), `${JSON.stringify(error)}`, 'error');
-                    break;
-            }
-        });
-    }
-
     log(title, text, level = 'info') {
-        this.logger.log(title, text, level);
-    }
-
-    getInstance(guildId) {
-        return this.instances[guildId];
-    }
-
-    setInstance(guildId, instance) {
-        this.instances[guildId] = instance;
-        InstanceUtils.writeInstanceFile(guildId, instance);
+        console.log(`[${level.toUpperCase()}] ${title}: ${text}`);
     }
 
     async setupGuild(guild) {
-        const instance = this.getInstance(guild.id);
+        const instance = InstanceUtils.readInstanceFile(guild.id);
+        this.instances[guild.id] = instance;
 
-        await require('../discordTools/RegisterSlashCommands')(this, guild);
-        let category = await require('../discordTools/SetupGuildCategory')(this, guild);
-        await require('../discordTools/SetupGuildChannels')(this, guild, category);
-
-        if (instance.firstTime) {
-            const perms = PermissionHandler.getPermissionsRemoved(this, guild);
-            try { await category.permissionOverwrites.set(perms); } catch(e) {}
-        } else {
-            await PermissionHandler.resetPermissionsAllChannels(this, guild);
+        // Tworzymy verify-here kanał jeśli nie istnieje
+        const verifyChannelName = 'verify-here';
+        let verifyChannel = guild.channels.cache.find(c => c.name === verifyChannelName && c.type === 0); // 0 = text
+        if (!verifyChannel) {
+            verifyChannel = await guild.channels.create({
+                name: verifyChannelName,
+                type: 0,
+                permissionOverwrites: [
+                    {
+                        id: guild.roles.everyone.id,
+                        deny: [Discord.PermissionsBitField.Flags.SendMessages]
+                    }
+                ]
+            });
+            this.log('Setup', `Stworzono kanał ${verifyChannelName} w guild ${guild.name}`);
         }
 
-        require('../util/FcmListener')(this, guild);
-        const credentials = InstanceUtils.readCredentialsFile(guild.id);
-        for (const steamId of Object.keys(credentials)) {
-            if (steamId !== credentials.hoster && steamId !== 'hoster') {
-                require('../util/FcmListenerLite')(this, guild, steamId);
-            }
-        }
+        // Panel AI – nie robimy nic, jak chcesz możesz dodać później
 
-        await require('../discordTools/SetupSettingsMenu')(this, guild);
-
-        if (instance.firstTime) await PermissionHandler.resetPermissionsAllChannels(this, guild);
-
-        this.resetRustplusVariables(guild.id);
+        // Reset RustPlus variables
+        this.activeRustplusInstances[guild.id] = false;
     }
 
-    resetRustplusVariables(guildId) {
-        this.activeRustplusInstances[guildId] = false;
-        this.rustplusReconnecting[guildId] = false;
-        delete this.rustplusMaps[guildId];
+    createRustplusInstance(guildId, serverIp, appPort, steamId, playerToken) {
+        const rustplus = new RustPlus(guildId, serverIp, appPort, steamId, playerToken);
+        this.rustplusInstances[guildId] = rustplus;
+        this.activeRustplusInstances[guildId] = true;
+        rustplus.build();
+        return rustplus;
+    }
 
-        if (this.rustplusReconnectTimers[guildId]) {
-            clearTimeout(this.rustplusReconnectTimers[guildId]);
-            this.rustplusReconnectTimers[guildId] = null;
+    async updateBattlemetricsInstances() {
+        for (const guild of this.guilds.cache.values()) {
+            const instance = this.instances[guild.id];
+            if (!instance) continue;
+            const activeServer = instance.activeServer;
+            if (!activeServer || !instance.serverList[activeServer]) continue;
+            const bmId = instance.serverList[activeServer].battlemetricsId;
+            if (!bmId) continue;
+
+            if (!this.battlemetricsInstances[bmId]) {
+                const bmInstance = new Battlemetrics(bmId);
+                await bmInstance.setup();
+                this.battlemetricsInstances[bmId] = bmInstance;
+            } else {
+                await this.battlemetricsInstances[bmId].evaluation();
+            }
         }
-        if (this.rustplusLiteReconnectTimers[guildId]) {
-            clearTimeout(this.rustplusLiteReconnectTimers[guildId]);
-            this.rustplusLiteReconnectTimers[guildId] = null;
-        }
+    }
+
+    build() {
+        this.login(Config.discord.token)
+            .then(() => this.log('Bot', 'Zalogowano poprawnie!'))
+            .catch(err => this.log('Error', JSON.stringify(err), 'error'));
     }
 }
 
