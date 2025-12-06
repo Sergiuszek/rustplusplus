@@ -1,15 +1,22 @@
-import Fs from 'fs';
-import Path from 'path';
-import express, { Request, Response } from 'express';
-import config from './config/index.js';
-const DiscordBot = require('./src/structures/DiscordBot.js'); // <- poprawiona ścieżka
+/*
+  index.ts – główny plik startowy Rust++ dla Render.com
+*/
 
+import * as Fs from 'fs';
+import * as Path from 'path';
+import express, { Request, Response } from 'express';
+import config from './config/index.js'; // <- Twoje ustawienia
+const DiscordBot = require('./structures/DiscordBot.js'); // <- dodajemy .js
+
+// Tworzenie brakujących folderów
 createMissingDirectories();
 
+// 🔥 Najważniejsze: przekazujemy TYLKO token
 const client = new DiscordBot(config.discord.token);
+
 client.start();
 
-// Serwer HTTP
+// ==================== Serwer HTTP ====================
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -23,6 +30,7 @@ app.get('/ping', (req: Request, res: Response) => {
 
 app.listen(PORT, () => console.log(`Serwer HTTP nasłuchuje na porcie ${PORT}`));
 
+// ==================== Funkcja tworząca brakujące katalogi ====================
 function createMissingDirectories() {
     const folders = ['logs', 'instances', 'credentials', 'maps'];
     folders.forEach(folder => {
@@ -34,8 +42,9 @@ function createMissingDirectories() {
     });
 }
 
-process.on('unhandledRejection', error => {
+// Obsługa nieprzewidzianych błędów
+process.on('unhandledRejection', (error) => {
     console.log("Unhandled rejection:", error);
 });
 
-exports.client = client;
+export { client };
