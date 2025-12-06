@@ -5,7 +5,7 @@
 import * as Fs from 'fs';
 import * as Path from 'path';
 import express, { Request, Response } from 'express';
-import config from './config/index.js'; // <- Twoje ustawienia
+import config from '../config/index.js';
 const DiscordBot = require('./structures/DiscordBot.js'); // <- dodajemy .js
 
 // Tworzenie brakujących folderów
