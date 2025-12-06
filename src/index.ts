@@ -1,33 +1,28 @@
-const Fs = require('fs');
-const Path = require('path');
-const express = require('express');
-const config = require('./config/index.js'); // Twoje ustawienia
-import DiscordBot from './structures/DiscordBot'; // TS rozumie import z .ts
- // <- dodaj .js
+import Fs from 'fs';
+import Path from 'path';
+import express, { Request, Response } from 'express';
+import config from './config/index.js';
+const DiscordBot = require('./src/structures/DiscordBot.js'); // <- poprawiona ścieżka
 
 createMissingDirectories();
 
-// 🔥 najważniejsze: przekazujemy TYLKO TOKEN
 const client = new DiscordBot(config.discord.token);
+client.start();
 
-// Start bota
-client.build();
-
-// ==================== Serwer HTTP ====================
+// Serwer HTTP
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => {
+app.get('/', (req: Request, res: Response) => {
     res.send('Bot działa! ✅');
 });
 
-app.get('/ping', (req, res) => {
+app.get('/ping', (req: Request, res: Response) => {
     res.send('pong');
 });
 
 app.listen(PORT, () => console.log(`Serwer HTTP nasłuchuje na porcie ${PORT}`));
 
-// ==================== Funkcja tworząca brakujące katalogi ====================
 function createMissingDirectories() {
     const folders = ['logs', 'instances', 'credentials', 'maps'];
     folders.forEach(folder => {
@@ -39,7 +34,6 @@ function createMissingDirectories() {
     });
 }
 
-// ==================== Obsługa nieprzewidzianych błędów ====================
 process.on('unhandledRejection', error => {
     console.log("Unhandled rejection:", error);
 });
