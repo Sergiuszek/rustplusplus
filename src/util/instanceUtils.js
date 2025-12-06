@@ -1,64 +1,83 @@
-/*
-    Copyright (C) 2022 Alexander Emanuelsson (alexemanuelol)
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-    https://github.com/alexemanuelol/rustplusplus
-
-*/
-
 const Fs = require('fs');
 const Path = require('path');
 
-const Client = require('../../index.ts');
+// No direct reference to index.ts – it caused issues.
+// Your DiscordBot already loads instances itself.
 
 module.exports = {
-    getSmartDevice: function (guildId, entityId) {
-        /* Temporary function till discord modals gets more functional */
-        const instance = Client.client.getInstance(guildId);
+    getSmartDevice: function (guildId, entityId, instance) {
+        if (!instance || !instance.serverList) return null;
 
         for (const serverId in instance.serverList) {
-            for (const switchId in instance.serverList[serverId].switches) {
-                if (entityId === switchId) return { type: 'switch', serverId: serverId }
+            const server = instance.serverList[serverId];
+
+            if (!server) continue;
+
+            // Switch
+            if (server.switches && server.switches[entityId]) {
+                return { type: 'switch', serverId };
             }
-            for (const alarmId in instance.serverList[serverId].alarms) {
-                if (entityId === alarmId) return { type: 'alarm', serverId: serverId }
+
+            // Alarm
+            if (server.alarms && server.alarms[entityId]) {
+                return { type: 'alarm', serverId };
             }
-            for (const storageMonitorId in instance.serverList[serverId].storageMonitors) {
-                if (entityId === storageMonitorId) return { type: 'storageMonitor', serverId: serverId }
+
+            // Storage Monitor
+            if (server.storageMonitors && server.storageMonitors[entityId]) {
+                return { type: 'storageMonitor', serverId };
             }
         }
+
         return null;
     },
 
-    readInstanceFile: function (guildId) {
+    loadInstanceFile: function (guildId) {
         const path = Path.join(__dirname, '..', '..', 'instances', `${guildId}.json`);
-        return JSON.parse(Fs.readFileSync(path, 'utf8'));
+
+        if (!Fs.existsSync(path)) {
+            // No file? return null (bot will then create a new instance)
+            return null;
+        }
+
+        try {
+            return JSON.parse(Fs.readFileSync(path, 'utf8'));
+        } catch (err) {
+            console.log(`❌ Failed to read instance file for guild ${guildId}:`, err);
+            return null;
+        }
     },
 
     writeInstanceFile: function (guildId, instance) {
         const path = Path.join(__dirname, '..', '..', 'instances', `${guildId}.json`);
-        Fs.writeFileSync(path, JSON.stringify(instance, null, 2));
+
+        try {
+            Fs.writeFileSync(path, JSON.stringify(instance, null, 2));
+        } catch (err) {
+            console.log(`❌ Failed to write instance file for guild ${guildId}:`, err);
+        }
     },
 
     readCredentialsFile: function (guildId) {
         const path = Path.join(__dirname, '..', '..', 'credentials', `${guildId}.json`);
-        return JSON.parse(Fs.readFileSync(path, 'utf8'));
+
+        if (!Fs.existsSync(path)) return null;
+
+        try {
+            return JSON.parse(Fs.readFileSync(path, 'utf8'));
+        } catch (err) {
+            console.log(`❌ Failed to read credentials for guild ${guildId}:`, err);
+            return null;
+        }
     },
 
     writeCredentialsFile: function (guildId, credentials) {
         const path = Path.join(__dirname, '..', '..', 'credentials', `${guildId}.json`);
-        Fs.writeFileSync(path, JSON.stringify(credentials, null, 2));
+
+        try {
+            Fs.writeFileSync(path, JSON.stringify(credentials, null, 2));
+        } catch (err) {
+            console.log(`❌ Failed to write credentials file for guild ${guildId}:`, err);
+        }
     },
-}
+};
