@@ -20,11 +20,19 @@
 
 const Discord = require('discord.js');
 
-const Client = require('../../index.ts');
 const Constants = require('../util/constants.js');
 const DiscordTools = require('./discordTools.js');
 const InstanceUtils = require('../util/instanceUtils.js');
 const Timer = require('../util/timer');
+
+
+// discordEmbeds.js
+function getSmartSwitchEmbed(client, guildId, serverId, entityId) {
+    const instance = client.getInstance(guildId);
+    // reszta kodu
+}
+
+module.exports = { getSmartSwitchEmbed };
 
 function isValidUrl(url) {
     if (url.startsWith('https') || url.startsWith('http')) return true;
