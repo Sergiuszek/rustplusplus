@@ -1,4 +1,4 @@
-/*
+ws/*
     Copyright (C) 2022 Alexander Emanuelsson (alexemanuelol)
 
     This program is free software: you can redistribute it and/or modify
@@ -24,13 +24,10 @@ const Constants = require('../util/constants.js');
 const DiscordTools = require('./discordTools.js');
 const InstanceUtils = require('../util/instanceUtils.js');
 const Timer = require('../util/timer');
+const Client = require('../index.ts');
 
 
-// discordEmbeds.js
-function getSmartSwitchEmbed(client, guildId, serverId, entityId) {
-    const instance = client.getInstance(guildId);
-    // reszta kodu
-}
+
 
 module.exports = { getSmartSwitchEmbed };
 
