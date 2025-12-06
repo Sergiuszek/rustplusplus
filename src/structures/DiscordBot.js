@@ -1,15 +1,26 @@
 const { Client, GatewayIntentBits, Partials, PermissionsBitField } = require('discord.js');
 const Path = require('path');
 const Fs = require('fs');
-const InstanceUtils = require('../util/instanceUtils');
+const InstanceUtils = require('../util/instanceUtils.js');
+const Config = require('../../config');
+const Logger = require('./Logger.js');
 
-class DiscordBot {
-    constructor(botToken) {
-        this.botToken = botToken;
+class DiscordBot extends Client {
+    constructor(props) {
+        super({
+            intents: [
+                GatewayIntentBits.Guilds,
+                GatewayIntentBits.GuildMembers,
+                GatewayIntentBits.GuildMessages,
+                GatewayIntentBits.MessageContent
+            ],
+            partials: [Partials.Channel, Partials.Message]
+        });
+
+        this.logger = new Logger(Path.join(__dirname, '..', '..', 'logs/discordBot.log'), 'default');
         this.instances = {};
-        this.client = null;
-
-        this.memoryFile = Path.join(__dirname, '..', '..', 'memory.json');
+        this.memoryFile = Path.join('/tmp', 'memory.json'); // zapis pod Render
+        this.commands = new Map();
 
         // Load memory at startup
         if (Fs.existsSync(this.memoryFile)) {
@@ -21,41 +32,45 @@ class DiscordBot {
             }
         }
 
-        // Auto-save memory every 5 seconds
+        // Auto-save memory every 5 sek
         setInterval(() => {
             Fs.writeFileSync(this.memoryFile, JSON.stringify(this.instances, null, 2));
         }, 5000);
+
+        this.loadDiscordCommands();
+        this.loadDiscordEvents();
+    }
+
+    loadDiscordCommands() {
+        const commandFiles = Fs.readdirSync(Path.join(__dirname, '..', 'commands'))
+            .filter(file => file.endsWith('.js'));
+        for (const file of commandFiles) {
+            const command = require(`../commands/${file}`);
+            this.commands.set(command.name, command);
+        }
+    }
+
+    loadDiscordEvents() {
+        const eventFiles = Fs.readdirSync(Path.join(__dirname, '..', 'discordEvents'))
+            .filter(file => file.endsWith('.js'));
+        for (const file of eventFiles) {
+            const event = require(`../discordEvents/${file}`);
+            if (event.once) {
+                this.once(event.name, (...args) => event.execute(this, ...args));
+            } else {
+                this.on(event.name, (...args) => event.execute(this, ...args));
+            }
+        }
     }
 
     async start() {
         try {
-            console.log("🚀 Starting Discord bot…");
+            await this.login(Config.discord.token);
+            console.log(`🤖 Bot logged in as ${this.user.tag}`);
 
-            this.client = new Client({
-                intents: [
-                    GatewayIntentBits.Guilds,
-                    GatewayIntentBits.GuildMembers,
-                    GatewayIntentBits.GuildMessages,
-                    GatewayIntentBits.MessageContent
-                ],
-                partials: [Partials.Channel, Partials.Message]
-            });
-
-            this.client.once("ready", async () => {
-                console.log(`🤖 Bot logged in as ${this.client.user.tag}`);
-
-                const guilds = this.client.guilds.cache.map(g => g);
-                for (const guild of guilds) {
-                    await this.initGuild(guild);
-                }
-            });
-
-            this.client.on("guildCreate", async (guild) => {
-                console.log(`➕ Joined new guild: ${guild.id}`);
+            for (const [guildId, guild] of this.guilds.cache) {
                 await this.initGuild(guild);
-            });
-
-            this.client.login(this.botToken);
+            }
 
         } catch (err) {
             console.error("❌ Failed to start bot:", err);
@@ -64,78 +79,31 @@ class DiscordBot {
 
     async initGuild(guild) {
         try {
-            console.log(`🔧 Initializing guild: ${guild.id}`);
-
             let instance = InstanceUtils.loadInstanceFile(guild.id);
 
             if (!instance) {
-                instance = {
-                    firstTime: true,
-                    serverId: guild.id,
-                    panelChannelId: null,
-                    confirmChannelId: null
-                };
-
+                instance = { firstTime: true, serverId: guild.id };
                 this.setInstance(guild.id, instance);
             }
 
-            await this.setupGuild(guild, instance);
+            // Tutaj odpal setup (tworzenie kanałów itd.)
+            await require('../discordTools/RegisterSlashCommands')(this, guild);
+            const category = await require('../discordTools/SetupGuildCategory')(this, guild);
+            await require('../discordTools/SetupGuildChannels')(this, guild, category);
 
         } catch (err) {
-            console.error(`❌ Failed to initialize guild ${guild.id}:`, err);
+            console.error(`❌ Failed to init guild ${guild.id}:`, err);
         }
     }
 
-    // *** FIXED — now instantly saving memory.json ***
+    getInstance(guildId) {
+        return this.instances[guildId];
+    }
+
     setInstance(guildId, instance) {
         this.instances[guildId] = instance;
-
         Fs.writeFileSync(this.memoryFile, JSON.stringify(this.instances, null, 2));
         InstanceUtils.writeInstanceFile(guildId, instance);
-    }
-
-    async setupGuild(guild, instance) {
-        // BLOCK DUPLICATE SETUP
-        if (!instance.firstTime) {
-            console.log("⚠️ Guild already configured — skipping channel creation.");
-            return;
-        }
-
-        console.log(`🛠 Setting up guild for the first time: ${guild.id}`);
-
-        try {
-            // Create category
-            const category = await guild.channels.create({
-                name: "🤖 AI Verification",
-                type: 4
-            });
-
-            // Create panel channel
-            const panelChannel = await guild.channels.create({
-                name: "panel-ai",
-                type: 0,
-                parent: category.id
-            });
-
-            // Create confirm channel
-            const confirmChannel = await guild.channels.create({
-                name: "verify-here",
-                type: 0,
-                parent: category.id
-            });
-
-            instance.panelChannelId = panelChannel.id;
-            instance.confirmChannelId = confirmChannel.id;
-            instance.firstTime = false;
-
-            this.setInstance(guild.id, instance);
-
-            await panelChannel.send("Witamy! Kliknij, aby rozpocząć weryfikację.");
-            await confirmChannel.send("Wpisz kod, aby potwierdzić.");
-
-        } catch (err) {
-            console.error(`❌ Error setting up guild ${guild.id}:`, err);
-        }
     }
 }
 
