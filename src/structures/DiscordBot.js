@@ -1,7 +1,7 @@
 const { Client, GatewayIntentBits, Partials, PermissionsBitField } = require('discord.js');
 const Path = require('path');
 const Fs = require('fs');
-const InstanceUtils = require('../utils/instanceUtils');
+const InstanceUtils = require('../util/instanceUtils');
 
 class DiscordBot {
     constructor(botToken) {
