@@ -2,7 +2,8 @@ const Fs = require('fs');
 const Path = require('path');
 const express = require('express');
 const config = require('./config/index.js'); // Twoje ustawienia
-const DiscordBot = require('./structures/DiscordBot.js'); // <- dodaj .js
+import DiscordBot from './structures/DiscordBot'; // TS rozumie import z .ts
+ // <- dodaj .js
 
 createMissingDirectories();
 
