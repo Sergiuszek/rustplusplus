@@ -1,8 +1,18 @@
 const Fs = require('fs');
 const Path = require('path');
 
-// No direct reference to index.ts – it caused issues.
-// Your DiscordBot already loads instances itself.
+// Foldery zapisywalne na Renderze
+const instancesDir = Path.join('/tmp', 'instances');
+const credentialsDir = Path.join('/tmp', 'credentials');
+
+// Upewniamy się, że foldery istnieją
+if (!Fs.existsSync(instancesDir)) {
+    Fs.mkdirSync(instancesDir, { recursive: true });
+}
+
+if (!Fs.existsSync(credentialsDir)) {
+    Fs.mkdirSync(credentialsDir, { recursive: true });
+}
 
 module.exports = {
     getSmartDevice: function (guildId, entityId, instance) {
@@ -10,7 +20,6 @@ module.exports = {
 
         for (const serverId in instance.serverList) {
             const server = instance.serverList[serverId];
-
             if (!server) continue;
 
             // Switch
@@ -33,15 +42,12 @@ module.exports = {
     },
 
     loadInstanceFile: function (guildId) {
-        const path = Path.join(__dirname, '..', '..', 'instances', `${guildId}.json`);
+        const filePath = Path.join(instancesDir, `${guildId}.json`);
 
-        if (!Fs.existsSync(path)) {
-            // No file? return null (bot will then create a new instance)
-            return null;
-        }
+        if (!Fs.existsSync(filePath)) return null;
 
         try {
-            return JSON.parse(Fs.readFileSync(path, 'utf8'));
+            return JSON.parse(Fs.readFileSync(filePath, 'utf8'));
         } catch (err) {
             console.log(`❌ Failed to read instance file for guild ${guildId}:`, err);
             return null;
@@ -49,22 +55,22 @@ module.exports = {
     },
 
     writeInstanceFile: function (guildId, instance) {
-        const path = Path.join(__dirname, '..', '..', 'instances', `${guildId}.json`);
+        const filePath = Path.join(instancesDir, `${guildId}.json`);
 
         try {
-            Fs.writeFileSync(path, JSON.stringify(instance, null, 2));
+            Fs.writeFileSync(filePath, JSON.stringify(instance, null, 2));
         } catch (err) {
             console.log(`❌ Failed to write instance file for guild ${guildId}:`, err);
         }
     },
 
     readCredentialsFile: function (guildId) {
-        const path = Path.join(__dirname, '..', '..', 'credentials', `${guildId}.json`);
+        const filePath = Path.join(credentialsDir, `${guildId}.json`);
 
-        if (!Fs.existsSync(path)) return null;
+        if (!Fs.existsSync(filePath)) return null;
 
         try {
-            return JSON.parse(Fs.readFileSync(path, 'utf8'));
+            return JSON.parse(Fs.readFileSync(filePath, 'utf8'));
         } catch (err) {
             console.log(`❌ Failed to read credentials for guild ${guildId}:`, err);
             return null;
@@ -72,10 +78,10 @@ module.exports = {
     },
 
     writeCredentialsFile: function (guildId, credentials) {
-        const path = Path.join(__dirname, '..', '..', 'credentials', `${guildId}.json`);
+        const filePath = Path.join(credentialsDir, `${guildId}.json`);
 
         try {
-            Fs.writeFileSync(path, JSON.stringify(credentials, null, 2));
+            Fs.writeFileSync(filePath, JSON.stringify(credentials, null, 2));
         } catch (err) {
             console.log(`❌ Failed to write credentials file for guild ${guildId}:`, err);
         }
