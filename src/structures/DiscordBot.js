@@ -1,44 +1,66 @@
-const { Client, GatewayIntentBits, Partials, PermissionsBitField } = require('discord.js');
-const Path = require('path');
+const FormatJS = require('@formatjs/intl');
+const Discord = require('discord.js');
 const Fs = require('fs');
-const InstanceUtils = require('../util/instanceUtils.js');
-const Config = require('../../config');
-const Logger = require('./Logger.js');
+const Path = require('path');
 
-class DiscordBot extends Client {
+const Battlemetrics = require('../structures/Battlemetrics');
+const Cctv = require('./Cctv');
+const Config = require('../../config');
+const DiscordEmbeds = require('../discordTools/discordEmbeds.js');
+const DiscordTools = require('../discordTools/discordTools');
+const InstanceUtils = require('../util/instanceUtils.js');
+const Items = require('./Items');
+const Logger = require('./Logger.js');
+const PermissionHandler = require('../handlers/permissionHandler.js');
+const RustLabs = require('../structures/RustLabs');
+const RustPlus = require('../structures/RustPlus');
+
+class DiscordBot extends Discord.Client {
     constructor(props) {
-        super({
-            intents: [
-                GatewayIntentBits.Guilds,
-                GatewayIntentBits.GuildMembers,
-                GatewayIntentBits.GuildMessages,
-                GatewayIntentBits.MessageContent
-            ],
-            partials: [Partials.Channel, Partials.Message]
-        });
+        super({ intents: [
+            Discord.GatewayIntentBits.Guilds,
+            Discord.GatewayIntentBits.GuildMessages,
+            Discord.GatewayIntentBits.GuildMembers,
+            Discord.GatewayIntentBits.MessageContent
+        ]});
 
         this.logger = new Logger(Path.join(__dirname, '..', '..', 'logs/discordBot.log'), 'default');
+
+        this.commands = new Discord.Collection();
+        this.fcmListeners = {};
+        this.fcmListenersLite = {};
         this.instances = {};
-        this.memoryFile = Path.join('/tmp', 'memory.json'); // zapis pod Render
-        this.commands = new Map();
+        this.guildIntl = {};
+        this.botIntl = null;
+        this.enIntl = null;
+        this.enMessages = JSON.parse(Fs.readFileSync(Path.join(__dirname, '..', 'languages', 'en.json'), 'utf8'));
 
-        // Load memory at startup
-        if (Fs.existsSync(this.memoryFile)) {
-            try {
-                this.instances = JSON.parse(Fs.readFileSync(this.memoryFile, 'utf8'));
-                console.log("🔵 Memory loaded successfully.");
-            } catch (e) {
-                console.log("❌ Failed to load memory:", e);
-            }
-        }
+        this.rustplusInstances = {};
+        this.activeRustplusInstances = {};
+        this.rustplusReconnectTimers = {};
+        this.rustplusLiteReconnectTimers = {};
+        this.rustplusReconnecting = {};
+        this.rustplusMaps = {};
 
-        // Auto-save memory every 5 sek
-        setInterval(() => {
-            Fs.writeFileSync(this.memoryFile, JSON.stringify(this.instances, null, 2));
-        }, 5000);
+        this.uptimeBot = null;
+
+        this.items = new Items();
+        this.rustlabs = new RustLabs();
+        this.cctv = new Cctv();
+
+        this.pollingIntervalMs = Config.general.pollingIntervalMs;
+
+        this.battlemetricsInstances = {};
+
+        this.battlemetricsIntervalId = null;
+        this.battlemetricsIntervalCounter = 0;
+
+        this.voiceLeaveTimeouts = {};
 
         this.loadDiscordCommands();
         this.loadDiscordEvents();
+        this.loadEnIntl();
+        this.loadBotIntl();
     }
 
     loadDiscordCommands() {
@@ -55,7 +77,10 @@ class DiscordBot extends Client {
             .filter(file => file.endsWith('.js'));
         for (const file of eventFiles) {
             const event = require(`../discordEvents/${file}`);
-            if (event.once) {
+
+            if (event.name === 'rateLimited') {
+                this.rest.on(event.name, (...args) => event.execute(this, ...args));
+            } else if (event.once) {
                 this.once(event.name, (...args) => event.execute(this, ...args));
             } else {
                 this.on(event.name, (...args) => event.execute(this, ...args));
@@ -63,37 +88,55 @@ class DiscordBot extends Client {
         }
     }
 
-    async start() {
-        try {
-            await this.login(Config.discord.token);
-            console.log(`🤖 Bot logged in as ${this.user.tag}`);
-
-            for (const [guildId, guild] of this.guilds.cache) {
-                await this.initGuild(guild);
-            }
-
-        } catch (err) {
-            console.error("❌ Failed to start bot:", err);
-        }
+    loadEnIntl() {
+        const language = 'en';
+        const path = Path.join(__dirname, '..', 'languages', `${language}.json`);
+        const messages = JSON.parse(Fs.readFileSync(path, 'utf8'));
+        const cache = FormatJS.createIntlCache();
+        this.enIntl = FormatJS.createIntl({ locale: language, defaultLocale: 'en', messages }, cache);
     }
 
-    async initGuild(guild) {
-        try {
-            let instance = InstanceUtils.loadInstanceFile(guild.id);
+    loadBotIntl() {
+        const language = Config.general.language;
+        const path = Path.join(__dirname, '..', 'languages', `${language}.json`);
+        const messages = JSON.parse(Fs.readFileSync(path, 'utf8'));
+        const cache = FormatJS.createIntlCache();
+        this.botIntl = FormatJS.createIntl({ locale: language, defaultLocale: 'en', messages }, cache);
+    }
 
-            if (!instance) {
-                instance = { firstTime: true, serverId: guild.id };
-                this.setInstance(guild.id, instance);
+    loadGuildIntl(guildId) {
+        const instance = InstanceUtils.readInstanceFile(guildId);
+        const language = instance.generalSettings.language;
+        const path = Path.join(__dirname, '..', 'languages', `${language}.json`);
+        const messages = JSON.parse(Fs.readFileSync(path, 'utf8'));
+        const cache = FormatJS.createIntlCache();
+        this.guildIntl[guildId] = FormatJS.createIntl({ locale: language, defaultLocale: 'en', messages }, cache);
+    }
+
+    intlGet(guildId, id, variables = {}) {
+        let intl = guildId && guildId !== 'en' ? this.guildIntl[guildId] :
+            (guildId === 'en' ? this.enIntl : this.botIntl);
+        return intl.formatMessage({ id, defaultMessage: this.enMessages[id] }, variables);
+    }
+
+    build() {
+        this.login(Config.discord.token).catch(error => {
+            switch (error.code) {
+                case 502:
+                    this.log(this.intlGet(null, 'errorCap'), this.intlGet(null, 'badGateway', { error: JSON.stringify(error) }), 'error');
+                    break;
+                case 503:
+                    this.log(this.intlGet(null, 'errorCap'), this.intlGet(null, 'serviceUnavailable', { error: JSON.stringify(error) }), 'error');
+                    break;
+                default:
+                    this.log(this.intlGet(null, 'errorCap'), `${JSON.stringify(error)}`, 'error');
+                    break;
             }
+        });
+    }
 
-            // Tutaj odpal setup (tworzenie kanałów itd.)
-            await require('../discordTools/RegisterSlashCommands')(this, guild);
-            const category = await require('../discordTools/SetupGuildCategory')(this, guild);
-            await require('../discordTools/SetupGuildChannels')(this, guild, category);
-
-        } catch (err) {
-            console.error(`❌ Failed to init guild ${guild.id}:`, err);
-        }
+    log(title, text, level = 'info') {
+        this.logger.log(title, text, level);
     }
 
     getInstance(guildId) {
@@ -102,8 +145,51 @@ class DiscordBot extends Client {
 
     setInstance(guildId, instance) {
         this.instances[guildId] = instance;
-        Fs.writeFileSync(this.memoryFile, JSON.stringify(this.instances, null, 2));
         InstanceUtils.writeInstanceFile(guildId, instance);
+    }
+
+    async setupGuild(guild) {
+        const instance = this.getInstance(guild.id);
+
+        await require('../discordTools/RegisterSlashCommands')(this, guild);
+        let category = await require('../discordTools/SetupGuildCategory')(this, guild);
+        await require('../discordTools/SetupGuildChannels')(this, guild, category);
+
+        if (instance.firstTime) {
+            const perms = PermissionHandler.getPermissionsRemoved(this, guild);
+            try { await category.permissionOverwrites.set(perms); } catch(e) {}
+        } else {
+            await PermissionHandler.resetPermissionsAllChannels(this, guild);
+        }
+
+        require('../util/FcmListener')(this, guild);
+        const credentials = InstanceUtils.readCredentialsFile(guild.id);
+        for (const steamId of Object.keys(credentials)) {
+            if (steamId !== credentials.hoster && steamId !== 'hoster') {
+                require('../util/FcmListenerLite')(this, guild, steamId);
+            }
+        }
+
+        await require('../discordTools/SetupSettingsMenu')(this, guild);
+
+        if (instance.firstTime) await PermissionHandler.resetPermissionsAllChannels(this, guild);
+
+        this.resetRustplusVariables(guild.id);
+    }
+
+    resetRustplusVariables(guildId) {
+        this.activeRustplusInstances[guildId] = false;
+        this.rustplusReconnecting[guildId] = false;
+        delete this.rustplusMaps[guildId];
+
+        if (this.rustplusReconnectTimers[guildId]) {
+            clearTimeout(this.rustplusReconnectTimers[guildId]);
+            this.rustplusReconnectTimers[guildId] = null;
+        }
+        if (this.rustplusLiteReconnectTimers[guildId]) {
+            clearTimeout(this.rustplusLiteReconnectTimers[guildId]);
+            this.rustplusLiteReconnectTimers[guildId] = null;
+        }
     }
 }
 
