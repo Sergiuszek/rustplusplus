@@ -3,10 +3,11 @@
   "version": "1.22.0",
   "description": "A NodeJS Discord Bot that uses the rustplus.js library with QoL features",
   "main": "src/index.ts",
-  "scripts": {
-    "start": "npx ts-node src/index.ts",
-    "preinstall": "npx npm-force-resolutions",
-    "test": "tsc --noEmit -p ."
+"scripts": {
+  "start": "ts-node src/index.ts",
+  "test": "tsc --noEmit -p ."
+}
+
   },
   "repository": {
     "type": "git",
@@ -43,3 +44,4 @@
     "protobufjs": "7.2.4"
   }
 }
+
