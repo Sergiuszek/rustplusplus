@@ -2,7 +2,8 @@ const Fs = require('fs');
 const Path = require('path');
 const express = require('express');
 const config = require('./config/index.js'); // <-- twoje ustawienia
-const DiscordBot = require('./src/discord/DiscordBot'); // <-- MÓJ poprawiony DiscordBot
+const DiscordBot = require('./structures/DiscordBot');
+ // <-- MÓJ poprawiony DiscordBot
 
 createMissingDirectories();
 
